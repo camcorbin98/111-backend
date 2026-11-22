@@ -6,72 +6,93 @@ app = Flask(__name__)
 
 DB_NAME = "online-store.db"
 
-# ________ TABLES _________
+# ---------------- TABLES ----------------
+
 def init_db():
-    connection = sqlite3.connect(DB_NAME) #Opens a connection to the DB named 'online-stare.db'
-    cursor = connection.cursor() # Create a cursor/tool that lets us send commmands (SELECT, INSERT ...)
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS coupons(
+        CREATE TABLE IF NOT EXISTS coupons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
             discount INTEGER NOT NULL
-            )
-        """)
-
+        )
+    """)
 
     cursor.execute("""
-            CREATE TABLE IF NOT EXISTS products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                price REAL NOT NULL,
-                category TEXT NOT NULL,
-                image TEXT NOT NULL
-            )
-        """)
-    connection.commit() # Save changes to the DB
-    connection.close() # Close the connection to the DB
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            price REAL NOT NULL,
+            category TEXT NOT NULL,
+            image TEXT NOT NULL
+        )
+    """)
+
+    connection.commit()
+    connection.close()
+
+
+# ---------------- HEALTH ----------------
 
 @app.get("/health")
 def health_check():
     return jsonify({"status": "ok"})
 
-# --------- COUPONS -------------
-# POST /api/coupons-> create/add a coupon to the DB
+
+# ---------------- COUPONS ----------------
+
+# POST /api/coupons
 @app.post("/api/coupons")
 def create_coupon():
     new_coupon = request.get_json()
     code = new_coupon["code"]
     discount = new_coupon["discount"]
 
-    connection = sqlite3.connect(DB_NAME)#Open the connection to the DB
-    cursor = connection.cursor()#Create the cursor/tool work with sql commands (Insert, select)
-    cursor.execute("""
-                   INSERT INTO coupons (code, discount)
-                   VALUES (?, ?)
-    """,(code, discount))
-    connection.commit()
-    connection.close()
+    if discount > 90:
+        return jsonify({
+            "success": False,
+            "message": "Invalid coupon discount"
+        }), 400
+
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO coupons (code, discount)
+            VALUES (?, ?)
+        """, (code, discount))
+        connection.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({
+            "success": False,
+            "message": "Coupon code already exists"
+        }), 400
+    finally:
+        connection.close()
 
     return jsonify({
         "success": True,
-        "message": "Coupon created succesfully"
-    }), 201 #CREATED
+        "message": "Coupon created successfully"
+    }), 201
 
-# GET /api/coupons -> retrieve all the coupons in the COUPONS TABLE
+
+# GET /api/coupons
 @app.get("/api/coupons")
 def get_coupons():
-    # logic here
     connection = sqlite3.connect(DB_NAME)
     connection.row_factory = sqlite3.Row
     cursor = connection.cursor()
+
     cursor.execute("SELECT * FROM coupons")
-    coupons_db = cursor.fetchall() # fetchall, retrieves all the rows from the result of the query
+    coupons_db = cursor.fetchall()
     connection.close()
 
     coupons_list = []
-    for coupon in coupons_db:
-        print(coupon)
 
+    for coupon in coupons_db:
         coupons_list.append(dict(coupon))
 
     return jsonify({
@@ -80,18 +101,21 @@ def get_coupons():
         "data": coupons_list
     }), 200
 
-# GET /api/coupons/<2> -> Retrieve a single coupon by id using a path parameter
+
+# GET /api/coupons/<id>
 @app.get("/api/coupons/<int:coupon_id>")
 def get_coupon_by_id(coupon_id):
-    #logic here
     connection = sqlite3.connect(DB_NAME)
     connection.row_factory = sqlite3.Row
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM coupons WHERE id = ?", (coupon_id,))
+
+    cursor.execute(
+        "SELECT * FROM coupons WHERE id = ?",
+        (coupon_id,)
+    )
+
     coupon_db = cursor.fetchone()
     connection.close()
-
-    print(coupon_db)
 
     if coupon_db is None:
         return jsonify({
@@ -99,37 +123,70 @@ def get_coupon_by_id(coupon_id):
             "message": "Coupon not found"
         }), 404
 
-    coupon = dict(coupon_db)
-
     return jsonify({
         "success": True,
         "message": "Coupon retrieved successfully",
-        "data": coupon
+        "data": dict(coupon_db)
     }), 200
 
-# ------------------ PRODUCTS -----------
 
+# ---------------- PRODUCTS ----------------
 
+categories = ["Food", "Education", "Entertainment"]
 
 
 # POST /api/products
+@app.post("/api/products")
+def create_product():
+    new_product = request.get_json()
+    name = new_product["name"]
+    price = new_product["price"]
+    category = new_product["category"]
+    image = new_product["image"]
+
+    if category not in categories:
+        return jsonify({
+            "success": False,
+            "message": "Invalid category"
+        }), 400
+
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO products (name, price, category, image)
+            VALUES (?, ?, ?, ?)
+        """, (name, price, category, image))
+        connection.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({
+            "success": False,
+            "message": "Product name already exists"
+        }), 400
+    finally:
+        connection.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Product created successfully"
+    }), 201
 
 
-# GET /api/products -> return all the products from the DB
-
-
+# GET /api/products
 @app.get("/api/products")
 def get_products():
     connection = sqlite3.connect(DB_NAME)
     connection.row_factory = sqlite3.Row
     cursor = connection.cursor()
+
     cursor.execute("SELECT * FROM products")
     products_db = cursor.fetchall()
     connection.close()
 
     products_list = []
+
     for product in products_db:
-        print(product)
         products_list.append(dict(product))
 
     return jsonify({
@@ -138,14 +195,19 @@ def get_products():
         "data": products_list
     }), 200
 
-#GET /api/products/<2> -> return a product by id from the DB
 
+# GET /api/products/<id>
 @app.get("/api/products/<int:product_id>")
 def get_product_by_id(product_id):
     connection = sqlite3.connect(DB_NAME)
     connection.row_factory = sqlite3.Row
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+
+    cursor.execute(
+        "SELECT * FROM products WHERE id = ?",
+        (product_id,)
+    )
+
     product_db = cursor.fetchone()
     connection.close()
 
@@ -155,18 +217,18 @@ def get_product_by_id(product_id):
             "message": "Product not found"
         }), 404
 
-    product = dict(product_db)
-
     return jsonify({
         "success": True,
         "message": "Product retrieved successfully",
-        "data": product
+        "data": dict(product_db)
     }), 200
 
 
+# ---------------- RUN APPLICATION ----------------
 
-init_db() #Execute the function
+init_db()
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
+
 
