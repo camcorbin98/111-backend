@@ -1,10 +1,10 @@
-
 from flask import Flask, jsonify, request
 import sqlite3
 
 app = Flask(__name__)
 
 DB_NAME = "online-store.db"
+
 
 # ---------------- TABLES ----------------
 
@@ -130,9 +130,95 @@ def get_coupon_by_id(coupon_id):
     }), 200
 
 
+# DELETE /api/coupons/<id>
+@app.delete("/api/coupons/<int:coupon_id>")
+def delete_coupon_by_id(coupon_id):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM coupons WHERE id = ?",
+        (coupon_id,)
+    )
+
+    coupon_db = cursor.fetchone()
+
+    if not coupon_db:
+        connection.close()
+        return jsonify({
+            "success": False,
+            "message": "Coupon not found"
+        }), 404
+
+    cursor.execute(
+        "DELETE FROM coupons WHERE id = ?",
+        (coupon_id,)
+    )
+
+    connection.commit()
+    connection.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Coupon deleted successfully"
+    }), 200
+
+
+# PUT /api/coupons/<id>
+@app.put("/api/coupons/<int:coupon_id>")
+def update_coupon_by_id(coupon_id):
+    updated_coupon = request.get_json()
+    code = updated_coupon["code"]
+    discount = updated_coupon["discount"]
+
+    if discount > 90:
+        return jsonify({
+            "success": False,
+            "message": "Invalid coupon discount"
+        }), 400
+
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM coupons WHERE id = ?",
+        (coupon_id,)
+    )
+
+    coupon_db = cursor.fetchone()
+
+    if not coupon_db:
+        connection.close()
+        return jsonify({
+            "success": False,
+            "message": "Coupon not found"
+        }), 404
+
+    try:
+        cursor.execute("""
+            UPDATE coupons
+            SET code = ?, discount = ?
+            WHERE id = ?
+        """, (code, discount, coupon_id))
+
+        connection.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({
+            "success": False,
+            "message": "Coupon code already exists"
+        }), 400
+    finally:
+        connection.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Coupon updated successfully"
+    }), 200
+
+
 # ---------------- PRODUCTS ----------------
 
-categories = ["Food", "Education", "Entertainment"]
+categories = ["electronics", "education", "food"]
 
 
 # POST /api/products
@@ -158,6 +244,7 @@ def create_product():
             INSERT INTO products (name, price, category, image)
             VALUES (?, ?, ?, ?)
         """, (name, price, category, image))
+
         connection.commit()
     except sqlite3.IntegrityError:
         return jsonify({
@@ -221,6 +308,97 @@ def get_product_by_id(product_id):
         "success": True,
         "message": "Product retrieved successfully",
         "data": dict(product_db)
+    }), 200
+
+
+# PUT /api/products/<id>
+@app.put("/api/products/<int:product_id>")
+def update_product_by_id(product_id):
+    updated_product = request.get_json()
+
+    connection = sqlite3.connect(DB_NAME)
+    connection.row_factory = sqlite3.Row
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM products WHERE id = ?",
+        (product_id,)
+    )
+
+    product_db = cursor.fetchone()
+
+    if product_db is None:
+        connection.close()
+        return jsonify({
+            "success": False,
+            "message": "Product not found"
+        }), 404
+
+    name = updated_product.get("name", product_db["name"])
+    price = updated_product.get("price", product_db["price"])
+    category = updated_product.get("category", product_db["category"])
+    image = updated_product.get("image", product_db["image"])
+
+    if category not in categories:
+        connection.close()
+        return jsonify({
+            "success": False,
+            "message": "Invalid category"
+        }), 400
+
+    try:
+        cursor.execute("""
+            UPDATE products
+            SET name = ?, price = ?, category = ?, image = ?
+            WHERE id = ?
+        """, (name, price, category, image, product_id))
+
+        connection.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({
+            "success": False,
+            "message": "Invalid product data or duplicate name"
+        }), 400
+    finally:
+        connection.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Product updated successfully"
+    }), 200
+
+
+# DELETE /api/products/<id>
+@app.delete("/api/products/<int:product_id>")
+def delete_product_by_id(product_id):
+    connection = sqlite3.connect(DB_NAME)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM products WHERE id = ?",
+        (product_id,)
+    )
+
+    product_db = cursor.fetchone()
+
+    if product_db is None:
+        connection.close()
+        return jsonify({
+            "success": False,
+            "message": "Product not found"
+        }), 404
+
+    cursor.execute(
+        "DELETE FROM products WHERE id = ?",
+        (product_id,)
+    )
+
+    connection.commit()
+    connection.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Product deleted successfully"
     }), 200
 
 
